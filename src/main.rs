@@ -81,23 +81,7 @@ impl std::fmt::Display for EventInfo {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenvy::dotenv()?;
-
-    let pool = PgPoolOptions::new()
-        .connect(&std::env::var("DATABASE_URL")?)
-        .await?;
-    println!("All connected!");
-
-    let file_to_read = std::env::args().nth(1).expect("missing csv file to read");
-    println!("Reading {file_to_read:?}");
-    let file_contents = read_to_string(file_to_read).await?;
-    let rdr = AsyncReaderBuilder::new()
-        .has_headers(false)
-        .create_reader(file_contents.as_bytes());
-    let mut rdr = rdr.into_records();
-
+pub async fn full_import (rdr:  csv_async::StringRecordsIntoStream<'_, &[u8]>) -> Result<(), Box<dyn std::error::Error>> {
     //(EventInfo, Year) represents (info, current year of people in this event)
     let mut event_db_ids: HashMap<(EventInfo, Year), usize> = HashMap::new();
     let mut events: HashMap<usize, EventInfo> = HashMap::new(); //hm not a vec as blank cols for eventinfos
@@ -199,4 +183,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+
+}
+
+pub async fn rewards (rdr:  csv_async::StringRecordsIntoStream<'_, &[u8]>) -> Result<(), Box<dyn std::error::Error>> {
+
+
+    Ok(())
+}
+
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv()?;
+
+    let pool = PgPoolOptions::new()
+        .connect(&std::env::var("DATABASE_URL")?)
+        .await?;
+    println!("All connected!");
+
+    let file_to_read = std::env::args().nth(1).expect("missing csv file to read");
+    println!("Reading {file_to_read:?}");
+    let file_contents = read_to_string(file_to_read).await?;
+    let rdr = AsyncReaderBuilder::new()
+        .has_headers(false)
+        .create_reader(file_contents.as_bytes());
+    let mut rdr = rdr.into_records();
+
+    full_import(rdr).await?;
+    rewards(rdr).await?;
+
+    Ok(())
+
+
 }
