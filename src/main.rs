@@ -1,7 +1,7 @@
 use chrono::naive::{NaiveDate, NaiveDateTime, NaiveTime};
 use csv_async::AsyncReaderBuilder;
 use futures::stream::StreamExt;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgPoolOptions, PgPool};
 use std::collections::HashMap;
 use tokio::fs::read_to_string;
 
@@ -81,7 +81,7 @@ impl std::fmt::Display for EventInfo {
     }
 }
 
-pub async fn full_import (rdr:  csv_async::StringRecordsIntoStream<'_, &[u8]>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn full_import (mut rdr: csv_async::StringRecordsIntoStream<'_, &[u8]>, pool: PgPool) -> Result<(), Box<dyn std::error::Error>> {
     //(EventInfo, Year) represents (info, current year of people in this event)
     let mut event_db_ids: HashMap<(EventInfo, Year), usize> = HashMap::new();
     let mut events: HashMap<usize, EventInfo> = HashMap::new(); //hm not a vec as blank cols for eventinfos
@@ -186,8 +186,39 @@ pub async fn full_import (rdr:  csv_async::StringRecordsIntoStream<'_, &[u8]>) -
 
 }
 
-pub async fn rewards (rdr:  csv_async::StringRecordsIntoStream<'_, &[u8]>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn rewards (mut rdr: csv_async::StringRecordsIntoStream<'_, &[u8]>, pool: PgPool) -> Result<(), Box<dyn std::error::Error>> {
+	let mut i = 0;
+	while let Some(record) = rdr.next().await.transpose()? {
+		if i >= 2 {
+			let name = record[0].to_string();
+			let raw_form = record[1].to_string();
 
+			let tie = !record[2].to_string().is_empty();
+			let mug = !record[3].to_string().is_empty();
+
+			const TIE_ID: i32 = 1;
+			const MUG_ID: i32 = 2;
+
+			let participant_id = sqlx::query!(
+			                "SELECT id FROM people WHERE CONCAT(first_name, ' ', surname) = $1 and form = $2",
+			                name,
+			                raw_form
+			            )
+			            .fetch_one(&pool)
+			            .await?
+			            .id;
+
+			if tie {
+				sqlx::query!("INSERT INTO rewards_received (reward_id, person_id) VALUES ($1, $2)", TIE_ID, participant_id).execute(&pool).await?;
+			}
+			if mug {
+				sqlx::query!("INSERT INTO rewards_received (reward_id, person_id) VALUES ($1, $2)", MUG_ID, participant_id).execute(&pool).await?;
+			}
+
+		}
+
+		i += 1;
+	}
 
     Ok(())
 }
@@ -208,10 +239,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rdr = AsyncReaderBuilder::new()
         .has_headers(false)
         .create_reader(file_contents.as_bytes());
-    let mut rdr = rdr.into_records();
+    let rdr = rdr.into_records();
 
-    full_import(rdr).await?;
-    rewards(rdr).await?;
+    // full_import(rdr, pool).await?;
+    // rewards(rdr, pool).await?;
 
     Ok(())
 
