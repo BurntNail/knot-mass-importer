@@ -123,10 +123,25 @@ pub async fn full_import (mut rdr: csv_async::StringRecordsIntoStream<'_, &[u8]>
             .id;
             print!("{participant_id}");
 
+            {
+            	let tie = !record[2].to_string().is_empty();
+				let mug = !record[3].to_string().is_empty();
+
+				const TIE_ID: i32 = 1;
+				const MUG_ID: i32 = 2;
+
+				if tie {
+					sqlx::query!("INSERT INTO rewards_received (reward_id, person_id) VALUES ($1, $2)", TIE_ID, participant_id).execute(&pool).await?;
+				}
+				if mug {
+					sqlx::query!("INSERT INTO rewards_received (reward_id, person_id) VALUES ($1, $2)", MUG_ID, participant_id).execute(&pool).await?;
+				}
+            }
+
 			let mut count = 0;
             for event_col_index in record
                 .iter()
-                .skip(2)
+                .skip(4)
                 .enumerate()
                 .filter_map(|(i, contents)| if contents.is_empty() { None } else { Some(i) })
             {
@@ -186,44 +201,6 @@ pub async fn full_import (mut rdr: csv_async::StringRecordsIntoStream<'_, &[u8]>
 
 }
 
-pub async fn rewards (mut rdr: csv_async::StringRecordsIntoStream<'_, &[u8]>, pool: PgPool) -> Result<(), Box<dyn std::error::Error>> {
-	let mut i = 0;
-	while let Some(record) = rdr.next().await.transpose()? {
-		if i >= 2 {
-			let name = record[0].to_string();
-			let raw_form = record[1].to_string();
-
-			let tie = !record[2].to_string().is_empty();
-			let mug = !record[3].to_string().is_empty();
-
-			const TIE_ID: i32 = 1;
-			const MUG_ID: i32 = 2;
-
-			let participant_id = sqlx::query!(
-			                "SELECT id FROM people WHERE CONCAT(first_name, ' ', surname) = $1 and form = $2",
-			                name,
-			                raw_form
-			            )
-			            .fetch_one(&pool)
-			            .await?
-			            .id;
-
-			if tie {
-				sqlx::query!("INSERT INTO rewards_received (reward_id, person_id) VALUES ($1, $2)", TIE_ID, participant_id).execute(&pool).await?;
-			}
-			if mug {
-				sqlx::query!("INSERT INTO rewards_received (reward_id, person_id) VALUES ($1, $2)", MUG_ID, participant_id).execute(&pool).await?;
-			}
-
-		}
-
-		i += 1;
-	}
-
-    Ok(())
-}
-
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv()?;
@@ -242,7 +219,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rdr = rdr.into_records();
 
     // full_import(rdr, pool).await?;
-    // rewards(rdr, pool).await?;
 
     Ok(())
 
